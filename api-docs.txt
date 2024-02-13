@@ -1,0 +1,113 @@
+USER STORIES
+-------------
+
+
+As a Teacher
+------------
+1. Registration and Login:
+**************************
+- As a teacher, I can register for an account on the app by providing my username, password, email, name, and age.
+- After registration, I can log in to the app using my credentials.
+
+
+2. View Class Climate:
+**********************
+- Upon logging in, I can view the class climate data, which includes aggregated mood insights for the past 30 days.
+- This data helps me understand the overall mood of the class and identify any trends or patterns.
+
+
+3. Access Engagement Features:
+*****************************
+- I have access to engagement features such as suggested activities, positive reinforcement messages, motivational quotes, and anonymous polls based on students' mood selections.
+- These features help me create a positive and engaging learning environment for my students.
+
+
+4. View Individual Tracking:
+*****************************
+- I can also view individual mood tracking data for each student, allowing me to monitor their emotional well-being and provide support if needed.
+
+
+5. Export Insights:
+*******************
+- I have the option to export mood insights data as a CSV file for further analysis or reporting purposes.
+
+
+
+As a Student
+--------------
+1. Anonymous Registration and Login:
+************************************
+- As a student, I can anonymously log in to the app using a QR code provided by the teacher.
+- The QR code ensures anonymity while accessing the app's features.
+
+
+2. Select Mood:
+***************
+- After logging in, I can select my current mood from predefined options provided by the app.
+- I can also optionally add an explanation for my mood selection to provide context.
+
+
+3. View Engagement Features:
+****************************
+- I have access to engagement features suggested by the teacher based on the overall class mood.
+- These features encourage participation and create a supportive learning environment.
+
+
+4. Submit Anonymous Feedback:
+*****************************
+- I can submit anonymous feedback regarding my experience or concerns using the app.
+- This feedback helps teachers understand students' perspectives and improve the learning experience.
+
+
+5. Track Mood Over Time:
+*************************
+- I can track my mood over time using the app's mood tracking feature.
+- This allows me to reflect on my emotional well-being and identify any patterns or changes.
+
+6. Participate in Anonymous Polls:
+**********************************
+- I can participate in anonymous polls created by the teacher to gauge engagement and gather feedback from the class.
+
+7. View Engagement Activities and Positive Reinforcement:
+*********************************************************
+- I can view suggested engagement activities and positive reinforcement messages provided by the teacher based on the class mood.
+- These features foster a positive and inclusive classroom environment.
+
+8. Access Security Policies:
+- I can access the app's security policies to understand how my data is collected, used, and protected.
+
+
+APIS
+-----
+
+Authentication APIs:
+
+    1. User Registration: Allows users to register with the system by providing necessary information such as username, password, email, name, and age.
+    2. User Login: Enables registered users to log in by providing their username and password, generating an access token upon successful authentication.
+    3. User Logout: Allows authenticated users to log out of the system, invalidating their access token.
+
+Mood Tracking and Analysis APIs:
+
+    1. Individual Tracking: Retrieves individual mood tracking data for the past 30 days.
+    2. Mood Analysis: Retrieves mood analysis data for the past 30 days.
+    3. Anonymous Feedback: Allows users to submit anonymous feedback regarding their experience or concerns.
+    4. Class Climate: Retrieves class climate data for the past 30 days.
+    5. Aggregate Mood: Retrieves aggregate mood data for the past 30 days.
+    6. Explanations API: Allows students to add optional explanations for their mood selections and retrieve the list of explanations.
+    7. Mood Selection and Tracking: Allows users to select their mood and track it over time.
+    8. Time-Based Tracking API: Captures mood data at specific points during a lesson or at regular intervals throughout the day.
+    9. Engagement Features API: Provides engagement activities, positive reinforcement messages, motivational quotes, and anonymous polls based on mood selections.
+
+
+Insights and Export APIs:
+
+    1. Mood Insights: Retrieves mood insights for the past 7 days.
+    2. Export Insights: Exports mood data as a CSV file for the past 30 days.
+
+
+Security Policies:
+
+    1. Refresh Token: Allows users to refresh their access token.
+    2. Anonymity Policy: Provides information about maintaining anonymity for students' mood selections and explanations.
+    3. Data Security Policy: Describes the data security protocols implemented to protect student privacy.
+    4. Data Usage Policy: Informs users about how their data is collected, used, and protected.
