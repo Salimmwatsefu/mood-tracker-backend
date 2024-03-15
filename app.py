@@ -4,7 +4,7 @@ from flasgger import Swagger
 from flask_jwt_extended import JWTManager
 import os
 from flask_cors import CORS
-from routes import auth_blueprint, mood_blueprint, insights_blueprint
+from routes import auth_blueprint, mood_blueprint, insights_blueprint, class_session_blueprint
 from database import db
 from extensions import bcrypt
 from dotenv import load_dotenv
@@ -13,7 +13,7 @@ from datetime import timedelta
 
 def create_app():
     app = Flask(__name__)
-    CORS(app)
+    CORS(app, resources={r"/api/*": {"origins": "*"}})
     load_dotenv()
 
     app.config['SWAGGER'] = {
@@ -26,6 +26,8 @@ def create_app():
             'flasgger': 'flasgger/index.html'
         }
     }
+
+    
 
     app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
     app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('SQLALCHEMY_DATABASE_URI')
@@ -48,6 +50,7 @@ def create_app():
     # Register all blueprints at once
     app.register_blueprint(auth_blueprint, url_prefix="/api/v1/")
     app.register_blueprint(mood_blueprint, url_prefix="/api/v1/")
-    app.register_blueprint(insights_blueprint, url_prefix="/api/v1/")   
+    app.register_blueprint(insights_blueprint, url_prefix="/api/v1/")  
+    app.register_blueprint(class_session_blueprint, url_prefix="/api/v1/")  
 
     return app

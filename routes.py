@@ -1,20 +1,140 @@
-from models import db, Mood, User, Feedback, Poll, Explanation, Tracking
+from models import db, Mood, User, Feedback, Poll, Explanation, Tracking, ClassSession
 from werkzeug.exceptions import BadRequest, NotFound, InternalServerError, Unauthorized
 from flask_jwt_extended import create_access_token, get_jwt_identity, jwt_required
 from flask import (jsonify, request, redirect, url_for, session, Blueprint, Response,
                    current_app, url_for)
-from datetime import timedelta
+
+import pdb
+
+from datetime import datetime, timedelta
 from io import StringIO
 from extensions import bcrypt
 import os
 import uuid
 from uuid import uuid4
 
+import traceback
+import logging
+import random
+import string
+from flask_cors import cross_origin
+
+
+
+# Set the logging level to DEBUG
+logging.basicConfig(level=logging.DEBUG)
+
 
 # Create blueprints
 auth_blueprint = Blueprint("auth", __name__)
 mood_blueprint = Blueprint("mood", __name__)
 insights_blueprint = Blueprint("insights", __name__)
+class_session_blueprint = Blueprint("class_session", __name__)
+
+
+# Function to generate a random session code
+def generate_session_code():
+    # Generate a random string of alphanumeric characters
+    code_length = 6  # You can adjust the length of the session code
+    characters = string.ascii_letters + string.digits
+    return ''.join(random.choice(characters) for i in range(code_length))
+
+
+# Class session routes
+@class_session_blueprint.route("/class-session/create", methods=["POST"])
+@jwt_required()
+def create_class_session():
+    """
+    Create Class Session
+    ---
+    tags:
+      - Class Session
+    parameters:
+      - name: teacher_id
+        in: formData
+        type: string
+        required: true
+    responses:
+      201:
+        description: Class session created successfully
+      400:
+        description: Missing required information or invalid input
+      401:
+        description: Unauthorized access
+      500:
+        description: Internal Server Error
+    """
+    try:
+        current_username = get_jwt_identity()
+
+        # Get the user by username
+        user = User.query.filter_by(username=current_username).first()
+        if not user or user.role != "teacher":
+            raise Unauthorized("Only teachers can create class sessions")
+        
+        if not current_username:
+            raise BadRequest("Missing required information: 'current_username'")
+
+
+        
+        
+        session_name = request.json.get("session_name")
+        if not session_name:
+            raise BadRequest("Missing required information: 'session_name'")
+
+        # Generate a random 6-character session code
+        session_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+
+        # Create a new class session
+        new_class_session = ClassSession(code=session_code, teacher_id=user.id, session_name=session_name)
+        db.session.add(new_class_session)
+        db.session.commit()
+
+        return jsonify({"message": "Class session created successfully", "session_id": new_class_session.id, "session_code" : new_class_session.code}), 201
+    except BadRequest as e:
+        return jsonify({"error": str(e)}), 400
+    except Unauthorized as e:
+        return jsonify({"error": str(e)}), 401
+    except Exception as e:
+        print(f"An unexpected error occurred: {str(e)}")
+        return jsonify({"error": "An unexpected error occurred"}), 500
+    
+
+
+# Add a new route for fetching class sessions
+@class_session_blueprint.route("/class-sessions/list", methods=["GET"])
+@jwt_required()
+def get_class_sessions():
+    try:
+        current_username = get_jwt_identity()
+
+        # Get the user by username
+        user = User.query.filter_by(username=current_username).first()
+        if not user or user.role != "teacher":
+            raise Unauthorized("Only teachers can fetch class sessions")
+
+        # Fetch class sessions based on the user (teacher)
+        class_sessions = ClassSession.query.filter_by(teacher_id=user.id).all()
+
+        # Convert class sessions to a list of dictionaries
+        class_sessions_data = [
+            {
+                "session_id": session.id,
+                "session_code": session.code,
+                "session_name": session.session_name,
+                "created_at": session.created_at.strftime('%Y-%m-%d %H:%M:%S')
+                
+            }
+            for session in class_sessions
+        ]
+
+        return jsonify({"class_sessions": class_sessions_data}), 200
+    except Unauthorized as e:
+        return jsonify({"error": str(e)}), 401
+    except Exception as e:
+        print(f"An unexpected error occurred: {str(e)}")
+        return jsonify({"error": "An unexpected error occurred"}), 500
+
 
 
 # Authentication routes
@@ -67,15 +187,21 @@ def register_user():
         # Check if user already exists
         if User.query.filter_by(username=username).first():
             raise BadRequest("Username already exists")
+        
+        role = request.json.get("role", "student")
 
         # Create new user
-        new_user = User(username=username, password=bcrypt.generate_password_hash(password).decode("utf-8"), email=email, name=name, age=age, is_active=True, is_admin=False)
+        new_user = User(username=username, password=bcrypt.generate_password_hash(password).decode("utf-8"), email=email, name=name, age=age, is_active=True, role=role)
         db.session.add(new_user)
         db.session.commit()
 
         return jsonify({"message": "User registration successful"}), 201
     except BadRequest as e:
         return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        print("An unexpected error occurred:", e)
+        traceback.print_exc()  # This will print the traceback
+        return jsonify({"error": "An unexpected error occurred"}), 500
 
 
 @auth_blueprint.route("/auth/login", methods=["POST"])
@@ -127,7 +253,7 @@ def login_user():
 
         # Create access token for authenticated users (not anonymous)
         if not user.is_anonymous:
-            access_token = create_access_token(identity=user.username, expires_delta=timedelta(days=1))
+            access_token = create_access_token(identity=user.username, additional_claims={"role": user.role}, expires_delta=timedelta(days=1))
             return jsonify({"access_token": access_token}), 200
 
         # Use a different token type or mechanism for anonymous access
@@ -141,7 +267,7 @@ def login_user():
         return jsonify({"error": str(e)}), 401
 
 
-# Unonimous User Login
+
 @auth_blueprint.route("/auth/register_anonymous", methods=["POST"])
 def anonymous_login():
     """
@@ -149,11 +275,31 @@ def anonymous_login():
     ---
     tags:
       - Authentication
+    parameters:
+      - name: code
+        in: formData
+        type: string
+        required: true
+        description: The code provided by the teacher
     responses:
       201:
-        description: Anonymous user registered successfully
+        description: Anonymous user registered and logged in successfully
+      400:
+        description: Invalid code or missing information
+      500:
+        description: Internal Server Error
     """
     try:
+        # Validate input
+        code = request.json.get("code")
+        if not code:
+            raise BadRequest("Missing code")
+
+        # Check if the code is valid and get the associated class session
+        class_session = get_class_session_by_code(code)
+        if not class_session:
+            raise BadRequest("Invalid code")
+
         # Generate a unique anonymous username
         username = f"anonymous_{uuid4()}"
 
@@ -162,14 +308,25 @@ def anonymous_login():
         db.session.add(new_user)
         db.session.commit()
 
+        # Associate the user with the class session
+        class_session.students.append(new_user)
+        db.session.commit()
+
         # Use a different token type or mechanism for anonymous access
         # (e.g., session token instead of JWT)
-        session_token = uuid.uuid4().hex
+        session_token = f"{uuid4().hex}-{class_session.id}"
 
         return jsonify({"session_token": session_token}), 201
+    except BadRequest as e:
+        return jsonify({"error": str(e)}), 400
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "An unexpected error occurred"}), 500
 
+# You need to implement the code verification logic based on your requirements
+def get_class_session_by_code(code):
+    # Implement your code verification logic here
+    # For example, query the database to get the class session associated with the code
+    return ClassSession.query.filter_by(code=code).first()
 
 @auth_blueprint.route("/auth/logout", methods=["DELETE"])
 @jwt_required()
@@ -207,13 +364,13 @@ def individual_tracking():
         return jsonify({"error": "Unauthorized access"}), 403
     try:
         # Retrieve mood data (e.g., for the past 30 days)
-        recent_moods = Mood.query.filter(Mood.timestamp > (db.func.now() - db.timedelta(days=30))).all()
+        recent_moods = Mood.query.filter(Mood.timestamp > (db.func.now() - timedelta(days=30))).all()
         mood_data = [{"mood": mood.mood, "timestamp": mood.timestamp.strftime("%Y-%m-%d %H:%M:%S")} for mood in recent_moods]
 
         return jsonify({"data": mood_data}), 200
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
+        logging.exception("An error occurred:")
+        return jsonify({"error": "Internal Server Error"}), 500
 
 # Mood Analysis API
 @insights_blueprint.route("/insights/mood-analysis", methods=["GET"])
@@ -229,7 +386,7 @@ def mood_analysis():
     """
     try:
         # Retrieve mood data (e.g., for the past 30 days)
-        recent_moods = Mood.query.filter(Mood.timestamp > (db.func.now() - db.timedelta(days=30))).all()
+        recent_moods = Mood.query.filter(Mood.timestamp > (db.func.now() - timedelta(days=30))).all()
         mood_data = [{"mood": mood.mood, "timestamp": mood.timestamp.strftime("%Y-%m-%d %H:%M:%S")} for mood in recent_moods]
 
         return jsonify({"data": mood_data}), 200
@@ -257,26 +414,40 @@ def anonymous_feedback():
         description: Invalid feedback input
     """
     try:
-        feedback = request.json.get("feedback")
+        feedback = request.get_json().get("feedback")
 
         # Validate feedback input (optional)
         if not feedback or not isinstance(feedback, str):
             raise BadRequest("Invalid feedback input")
+        
+       
 
         # Store feedback data in the database
-        feedback_id = str(uuid4())
-        new_feedback = Feedback(id=feedback_id, feedback=feedback) 
+        timestamp = datetime.utcnow()
+
+        print("Timestamp before insertion:", timestamp)
+
+        
+
+        new_feedback = Feedback( user_id=None, feedback=feedback, timestamp= timestamp)
         db.session.add(new_feedback)
         db.session.commit()
+
+        print("Timestamp after insertion:", new_feedback.timestamp)
+
 
         return jsonify({"message": "Anonymous feedback submitted successfully"}), 201
     except BadRequest as e:
         return jsonify({"error": str(e)}), 400
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        error_message = f"Error: {str(e)}. Timestamp: {timestamp}"
+        return jsonify({"error": error_message}), 500
+
 
 
 # Class Climate API
+#This shows class climate for the past 30 days
+# This shows class climate for the past 30 days
 @insights_blueprint.route("/insights/class-climate", methods=["GET"])
 def class_climate():
     """
@@ -284,18 +455,39 @@ def class_climate():
     ---
     tags:
       - Insights
+    parameters:
+      - name: class_session_id
+        in: query
+        type: string
+        required: true
+        description: The ID of the class session for which to retrieve mood data
     responses:
       200:
         description: Class climate data retrieved successfully
     """
     try:
-        # Retrieve mood data (e.g., for the past 30 days)
-        recent_moods = Mood.query.filter(Mood.timestamp > (db.func.now() - db.timedelta(days=30))).all()
-        mood_data = [{"mood": mood.mood, "timestamp": mood.timestamp.strftime("%Y-%m-%d %H:%M:%S")} for mood in recent_moods]
+        class_session_id = request.args.get("class_session_id")
+
+        # Ensure that class_session_id is provided
+        if not class_session_id:
+            return jsonify({"error": "class_session_id parameter is required"}), 400
+
+        # Retrieve mood data (e.g., for the past 30 days) for the specified class session ID
+        recent_moods = Mood.query.filter(Mood.class_session_id == class_session_id, Mood.timestamp > (db.func.now() - timedelta(days=30))).all()
+        
+        # Calculate mood counts
+        mood_counts = {}
+        for mood in recent_moods:
+            mood_name = mood.mood.lower()
+            mood_counts[mood_name] = mood_counts.get(mood_name, 0) + 1
+
+        # Format mood data with counts
+        mood_data = [{"mood": mood_name, "count": count} for mood_name, count in mood_counts.items()]
 
         return jsonify({"data": mood_data}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 
 '''
@@ -315,7 +507,7 @@ def aggregate_mood():
     """
     try:
         # Retrieve mood data (e.g., for the past 30 days)
-        recent_moods = Mood.query.filter(Mood.timestamp > (db.func.now() - db.timedelta(days=30))).all()
+        recent_moods = Mood.query.filter(Mood.timestamp > (db.func.now() - timedelta(days=30))).all()
         mood_data = [mood.mood for mood in recent_moods]
 
         # Calculate mood insights
@@ -396,31 +588,24 @@ def list_explanations():
 # Mood routes
 @mood_blueprint.route("/mood/select", methods=["POST"])
 def select_mood():
-    """
-    Select Mood
-    ---
-    tags:
-      - Mood
-    parameters:
-      - name: mood
-        in: formData
-        type: string
-        required: true
-    responses:
-      201:
-        description: Mood selection successful
-      400:
-        description: Invalid mood input
-    """
     try:
         mood = request.json.get("mood")
+        session_token = request.headers.get("Authorization")
 
-        # Validate mood input (optional)
+        # Extract class session ID from the session token
+        _, class_session_id = session_token.split("-")
+
+        # Validate mood input
         if not mood or not isinstance(mood, str):
             raise BadRequest("Invalid mood input")
 
-        # Store mood data in the database
-        new_mood = Mood(user_id="anonymous", mood=mood)  # Example using anonymous user
+        # Check if the class session exists
+        class_session = ClassSession.query.get(class_session_id)
+        if not class_session:
+            raise BadRequest("Invalid class session")
+
+        # Store mood data in the database, associating it with the class session
+        new_mood = Mood(user_id="anonymous", mood=mood, timestamp=datetime.utcnow(), class_session_id=class_session_id)
         db.session.add(new_mood)
         db.session.commit()
 
@@ -429,6 +614,8 @@ def select_mood():
         return jsonify({"error": str(e)}), 400
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
 
 
 @mood_blueprint.route("/mood/track", methods=["GET"])
@@ -443,13 +630,21 @@ def track_mood():
         description: Mood data retrieved successfully
     """
     try:
+        
+        
+
+
         # Retrieve mood data (e.g., for the past 24 hours)
-        recent_moods = Mood.query.filter(Mood.timestamp > (db.func.now() - db.timedelta(days=1))).all()
+        recent_moods = Mood.query.filter(Mood.timestamp > (db.func.now() - timedelta(days=1))).all()
+
         mood_data = [{"mood": mood.mood, "timestamp": mood.timestamp.strftime("%Y-%m-%d %H:%M:%S")} for mood in recent_moods]
 
         return jsonify({"data": mood_data}), 200
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        error_message = f"An error occurred: {str(e)}"
+        traceback_str = traceback.format_exc()
+        error_details = {"error": error_message, "traceback": traceback_str}
+        return jsonify(error_details), 500
 
 
 @mood_blueprint.route("/mood/list", methods=["GET"])
@@ -466,7 +661,11 @@ def list_mood():
     try:
         # Retrieve all mood data
         all_moods = Mood.query.all()
-        mood_data = [{"mood": mood.mood, "timestamp": mood.timestamp.strftime("%Y-%m-%d %H:%M:%S")} for mood in all_moods]
+        mood_data = []
+
+        for mood in all_moods:
+            timestamp = mood.timestamp.strftime("%Y-%m-%d %H:%M:%S") if mood.timestamp else None
+            mood_data.append({"mood": mood.mood, "timestamp": timestamp})
 
         return jsonify({"data": mood_data}), 200
     except Exception as e:
@@ -563,9 +762,18 @@ def engagement_activities():
     """
     try:
         # Retrieve mood data (e.g., for the past 7 days)
-        recent_moods = Mood.query.filter(Mood.timestamp > (db.func.now() - db.timedelta(days=7))).all()
+        current_timestamp = db.func.now()
+        current_app.logger.info("Current Timestamp: %s", current_timestamp)
+
+        # Retrieve mood data (e.g., for the past 7 days)
+        seven_days_ago = current_timestamp - timedelta(days=7)
+        print("Seven Days Ago:", seven_days_ago)
+
+        recent_moods = Mood.query.filter(Mood.timestamp > seven_days_ago).all()
         mood_data = [mood.mood for mood in recent_moods]
 
+        # Print or log the mood data
+        print("Mood Data:", mood_data)
         # Calculate mood insights
         mood_counts = {mood: mood_data.count(mood) for mood in set(mood_data)}
 
@@ -578,6 +786,8 @@ def engagement_activities():
 
         return jsonify({"data": engagement_activities}), 200
     except Exception as e:
+        current_app.logger.error("Error: %s", str(e))
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 
@@ -721,7 +931,7 @@ def mood_insights():
     """
     try:
         # Retrieve mood data (e.g., for the past 7 days)
-        recent_moods = Mood.query.filter(Mood.timestamp > (db.func.now() - db.timedelta(days=1))).all()
+        recent_moods = Mood.query.filter(Mood.timestamp > (db.func.now() - timedelta(days=7))).all()
         mood_data = [mood.mood for mood in recent_moods]
 
         # Calculate mood insights
@@ -731,7 +941,7 @@ def mood_insights():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
+#Export insights as a CSV for 30 days
 @insights_blueprint.route("/insights/export", methods=["GET"])
 def export_insights():
     """
@@ -745,7 +955,7 @@ def export_insights():
     """
     try:
         # Retrieve mood data (e.g., for the past 30 days)
-        recent_moods = Mood.query.filter(Mood.timestamp > (db.func.now() - db.timedelta(days=30))).all()
+        recent_moods = Mood.query.filter(Mood.timestamp > (db.func.now() - timedelta(days=30))).all()
         mood_data = [{"mood": mood.mood, "timestamp": mood.timestamp.strftime("%Y-%m-%d %H:%M:%S")} for mood in recent_moods]
 
         # Create CSV file

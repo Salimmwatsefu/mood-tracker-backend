@@ -1,4 +1,5 @@
 from database import db
+from datetime import datetime
 
 
 class User(db.Model):
@@ -11,6 +12,7 @@ class User(db.Model):
     age = db.Column(db.Integer)
     is_active = db.Column(db.Boolean)
     role = db.Column(db.String)
+    enrolled_sessions = db.relationship('ClassSession', secondary='class_session_students', back_populates='students')
 
     def serialize(self):
         return {
@@ -29,13 +31,18 @@ class Mood(db.Model):
     user_id = db.Column(db.String)
     mood = db.Column(db.String)
     timestamp = db.Column(db.DateTime)
+    class_session_id = db.Column(db.Integer, db.ForeignKey('class_session.id'))  # Add this line
+
+    # Add the relationship with ClassSession model
+    class_session = db.relationship('ClassSession', back_populates='moods')
 
     def serialize(self):
         return {
             "id": self.id,
             "user_id": self.user_id,
             "mood": self.mood,
-            "timestamp": self.timestamp.strftime("%Y-%m-%d %H:%M:%S")
+            "timestamp": self.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+            "class_session_id": self.class_session_id
         }
 
 
@@ -152,3 +159,27 @@ class Tracking(db.Model):
             "insights": self.insights,
             "timestamp": self.timestamp.strftime("%Y-%m-%d %H:%M:%S")
         }
+    
+class ClassSession(db.Model):
+
+    id = db.Column(db.Integer, primary_key=True)
+    code = db.Column(db.String(20), unique=True, nullable=False)
+    teacher_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    session_name = db.Column(db.String, unique=True, nullable=False)
+    students = db.relationship('User', secondary='class_session_students', back_populates='enrolled_sessions')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    moods = db.relationship('Mood', back_populates='class_session')
+
+    def serialize(self):
+        return {
+            "id": self.id,
+            "code": self.code,
+            "teacher_id": self.teacher_id,
+            "session_name": self.session_name,
+            "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S")
+        }
+
+class ClassSessionStudents(db.Model):
+
+    class_session_id = db.Column(db.Integer, db.ForeignKey('class_session.id'), primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), primary_key=True)
