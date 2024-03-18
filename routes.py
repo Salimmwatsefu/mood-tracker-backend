@@ -1,4 +1,4 @@
-from models import db, Mood, User, Feedback, Poll, Explanation, Tracking, ClassSession
+from models import db, Mood, User, Feedback, Poll, Explanation, Tracking, ClassSession, ClassSessionStudents
 from werkzeug.exceptions import BadRequest, NotFound, InternalServerError, Unauthorized
 from flask_jwt_extended import create_access_token, get_jwt_identity, jwt_required
 from flask import (jsonify, request, redirect, url_for, session, Blueprint, Response,
@@ -18,6 +18,7 @@ import logging
 import random
 import string
 from flask_cors import cross_origin
+from sqlalchemy import func
 
 
 
@@ -134,6 +135,46 @@ def get_class_sessions():
     except Exception as e:
         print(f"An unexpected error occurred: {str(e)}")
         return jsonify({"error": "An unexpected error occurred"}), 500
+    
+
+
+@class_session_blueprint.route("/class-sessions/<int:session_id>", methods=["GET"])
+@jwt_required()
+def get_class_session(session_id):
+    try:
+        current_username = get_jwt_identity()
+
+        # Get the user by username
+        user = User.query.filter_by(username=current_username).first()
+        if not user or user.role != "teacher":
+            raise Unauthorized("Only teachers can fetch class sessions")
+
+        # Fetch the class session based on the session ID and teacher ID
+        class_session = ClassSession.query.filter_by(id=session_id, teacher_id=user.id).first()
+
+        if not class_session:
+            return jsonify({"error": "Class session not found"}), 404
+
+        # Count the number of students enrolled in the class session
+        num_students = db.session.query(func.count(ClassSessionStudents.user_id)).filter_by(class_session_id=session_id).scalar()
+
+        # Convert class session to a dictionary
+        class_session_data = {
+            "id": class_session.id,
+            "code": class_session.code,
+            "teacher_id": class_session.teacher_id,
+            "session_name": class_session.session_name,
+            "created_at": class_session.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+            "num_students": num_students
+        }
+
+        return jsonify(class_session_data), 200
+    except Unauthorized as e:
+        return jsonify({"error": str(e)}), 401
+    except Exception as e:
+        print(f"An unexpected error occurred: {str(e)}")
+        return jsonify({"error": "An unexpected error occurred"}), 500
+
 
 
 
@@ -479,14 +520,80 @@ def class_climate():
         mood_counts = {}
         for mood in recent_moods:
             mood_name = mood.mood.lower()
+            mood_date = mood.timestamp.strftime("%Y-%m-%d")
             mood_counts[mood_name] = mood_counts.get(mood_name, 0) + 1
 
         # Format mood data with counts
-        mood_data = [{"mood": mood_name, "count": count} for mood_name, count in mood_counts.items()]
+        mood_data = [{"mood": mood_name, "date": mood_date, "count": count} for mood_name, count in mood_counts.items()]
+
 
         return jsonify({"data": mood_data}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+  
+from datetime import datetime, timedelta
+from flask import jsonify
+
+@insights_blueprint.route("/insights/class-climate-date", methods=["GET"])
+def class_climate_date():
+    """
+    Class Climate
+    ---
+    tags:
+      - Insights
+    parameters:
+      - name: class_session_id
+        in: query
+        type: string
+        required: true
+        description: The ID of the class session for which to retrieve mood data
+    responses:
+      200:
+        description: Class climate data retrieved successfully
+    """
+    try:
+        class_session_id = request.args.get("class_session_id")
+
+        # Ensure that class_session_id is provided
+        if not class_session_id:
+            return jsonify({"error": "class_session_id parameter is required"}), 400
+
+        # Calculate the start date for the past 7 days
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=7)
+
+        # Initialize mood data dictionary
+        mood_data = {}
+
+        # Loop over each day within the past 7 days
+        current_date = start_date
+        while current_date <= end_date:
+            next_date = current_date + timedelta(days=1)
+            # Retrieve mood data for the specified class session ID and current date
+            recent_moods = Mood.query.filter(
+                
+                Mood.class_session_id == class_session_id,
+                Mood.timestamp >= current_date,
+                Mood.timestamp < next_date
+            ).all()
+
+            # Format mood data with counts for the current date
+            mood_counts = {}
+            for mood in recent_moods:
+                mood_name = mood.mood.lower()
+                mood_counts[mood_name] = mood_counts.get(mood_name, 0) + 1
+
+            # Add mood data for the current date to the mood_data dictionary
+            mood_data[current_date.strftime("%Y-%m-%d")] = mood_counts
+
+            # Move to the next day
+            current_date += timedelta(days=1)
+
+        return jsonify({"data": mood_data}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 
 
