@@ -27,6 +27,12 @@ def create_app():
         }
     }
 
+    uri = os.getenv("DATABASE_URL")
+
+# Check if the URI starts with "postgres://"
+    if uri.startswith("postgres://"):
+    # Replace "postgres://" with "postgresql://"
+        uri = uri.replace("postgres://", "postgresql://", 1)
     
 
     app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
@@ -36,12 +42,9 @@ def create_app():
     app.config['JWT_REFRESH_TOKEN_EXPIRES'] = timedelta(days=30)
     app.config['JWT_BLACKLIST_ENABLED'] = True
     app.config['JWT_BLACKLIST_TOKEN_CHECKS'] = ['access', 'refresh']
+    app.config['SQLALCHEMY_DATABASE_URI'] = uri
 
-    if os.environ.get('DATABASE_URL'):
-     app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL')
-    else:
-    # Use SQLite for local development
-     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///mood_tracker.db'
+   
 
     with app.app_context():
         db.init_app(app)
