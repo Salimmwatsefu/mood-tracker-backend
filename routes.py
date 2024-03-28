@@ -1,4 +1,4 @@
-from models import db, Mood, User, Feedback, Poll, Explanation, Tracking, ClassSession, ClassSessionStudents
+from models import db, Mood, User, Feedback, Poll, Explanation, Tracking, ClassSession, ClassSessionStudents,  Reason, Mood
 from werkzeug.exceptions import BadRequest, NotFound, InternalServerError, Unauthorized
 from flask_jwt_extended import create_access_token, get_jwt_identity, jwt_required
 from flask import (jsonify, request, redirect, url_for, session, Blueprint, Response,
@@ -174,6 +174,7 @@ def get_class_session(session_id):
     except Exception as e:
         print(f"An unexpected error occurred: {str(e)}")
         return jsonify({"error": "An unexpected error occurred"}), 500
+
 
 
 
@@ -591,6 +592,52 @@ def class_climate_date():
             current_date += timedelta(days=1)
 
         return jsonify({"data": mood_data}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    
+@insights_blueprint.route("/insights/export/<int:session_id>", methods=["GET"])
+def export_insights_by_Id(session_id):
+    """
+    Export Insights
+    ---
+    tags:
+      - Insights
+    parameters:
+      - name: session_id
+        in: path
+        type: integer
+        required: true
+        description: ID of the class session
+    responses:
+      200:
+        description: Insights exported successfully
+    """
+    try:
+        # Retrieve mood data for the specified class session (e.g., for the past 30 days)
+        recent_moods = Mood.query.filter(Mood.timestamp > (db.func.now() - timedelta(days=30))) \
+                                  .filter_by(class_session_id=session_id) \
+                                  .all()
+        
+        # Aggregating mood counts
+        mood_counts = {}
+        for mood in recent_moods:
+            mood_counts[mood.mood] = mood_counts.get(mood.mood, 0) + 1
+
+        # Define CSV file name based on the class session name
+        class_session = ClassSession.query.get(session_id)
+        if not class_session:
+            return jsonify({"error": "Class session not found"}), 404
+
+        filename = f"{class_session.session_name.replace(' ', '_')}_insights_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.csv"
+
+        # Create CSV file
+        csv_output = StringIO()
+        csv_output.write("mood,count\n")
+        for mood, count in mood_counts.items():
+            csv_output.write(f"{mood},{count}\n")
+        csv_output.seek(0)
+
+        return Response(csv_output, mimetype="text/csv", headers={"Content-Disposition": f"attachment;filename={filename}"}), 200 # Return CSV file as a response object
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1139,7 +1186,78 @@ def data_usage_policy():
       200:
         description: Data usage policy retrieved successfully
     """
-    return jsonify({"policy": "We inform students about how their data is collected, used, and protected"}), 200    
+    return jsonify({"policy": "We inform students about how their data is collected, used, and protected"}), 200
+
+
+
+  # Assuming you have models for Explanation, Reason, and Mood
+
+
+@mood_blueprint.route("/mood/submit", methods=["POST"])
+def submit_mood_form():
+    try:
+        # Extract session token from the Authorization header
+        session_token = request.headers.get("Authorization")
+        if not session_token:
+            return jsonify({"error": "Authorization header is missing"}), 400
+
+        # Extract class session ID from the session token
+        _, class_session_id = session_token.split("-")
+
+        # Verify the class session ID here (you need to implement this logic)
+        class_session = ClassSession.query.get(class_session_id)
+        if not class_session:
+            return jsonify({"error": "Invalid class session"}), 400
+
+        # Extract data from the request
+        data = request.json
+
+        # Handle mood selection
+        selected_mood = data.get("selectedMood")
+        if not selected_mood or not isinstance(selected_mood, str):
+            return jsonify({"error": "Invalid mood input"}), 400
+
+        # Handle reason selection
+        selected_reasons = data.get("selectedReasons")
+        if not selected_reasons or not isinstance(selected_reasons, list):
+            return jsonify({"error": "Invalid reasons input"}), 400
+
+        # Handle explanation
+        explanation_text = data.get("explanation")
+        if explanation_text and not isinstance(explanation_text, str):
+            return jsonify({"error": "Invalid explanation input"}), 400
+
+        # Store new mood in the database
+
+        mood = Mood(mood=selected_mood)
+        db.session.add(mood)
+        
+        # Store new reasons in the database and associate them with the mood
+        for reason_label in selected_reasons:
+            
+            reason = Reason(label=reason_label)
+            db.session.add(reason)
+            mood.reasons.append(reason)
+            
+
+        # Add explanation if provided and associate it with the mood
+        if explanation_text:
+            explanation = Explanation(explanation=explanation_text)
+            db.session.add(explanation)
+            mood.explanations.append(explanation)
+
+        # Associate the mood with the class session
+        class_session.moods.append(mood)
+
+        # Commit changes to the database
+        db.session.commit()
+
+        return jsonify({"message": "Form submitted successfully"}), 200
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+        return jsonify({"error": "Internal Server Error"}), 500
+
+
 
 
 

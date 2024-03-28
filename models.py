@@ -26,24 +26,7 @@ class User(db.Model):
         }
 
 
-class Mood(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.String)
-    mood = db.Column(db.String)
-    timestamp = db.Column(db.DateTime)
-    class_session_id = db.Column(db.Integer, db.ForeignKey('class_session.id'))  # Add this line
 
-    # Add the relationship with ClassSession model
-    class_session = db.relationship('ClassSession', back_populates='moods')
-
-    def serialize(self):
-        return {
-            "id": self.id,
-            "user_id": self.user_id,
-            "mood": self.mood,
-            "timestamp": self.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
-            "class_session_id": self.class_session_id
-        }
 
 
 class Feedback(db.Model):
@@ -101,19 +84,7 @@ class Insights(db.Model):
             "timestamp": self.timestamp.strftime("%Y-%m-%d %H:%M:%S")
         }
 
-class Explanation(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.String)
-    explanation = db.Column(db.String)
-    timestamp = db.Column(db.DateTime)
 
-    def serialize(self):
-        return {
-            "id": self.id,
-            "user_id": self.user_id,
-            "explanation": self.explanation,
-            "timestamp": self.timestamp.strftime("%Y-%m-%d %H:%M:%S")
-        }
 
 class UserMood(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -160,16 +131,25 @@ class Tracking(db.Model):
             "timestamp": self.timestamp.strftime("%Y-%m-%d %H:%M:%S")
         }
     
-class ClassSession(db.Model):
 
+  
+
+class ClassSessionStudents(db.Model):
+
+    class_session_id = db.Column(db.Integer, db.ForeignKey('class_session.id'), primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), primary_key=True)
+
+
+class ClassSession(db.Model):
+    __tablename__ = 'class_session'
     id = db.Column(db.Integer, primary_key=True)
     code = db.Column(db.String(20), unique=True, nullable=False)
     teacher_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     session_name = db.Column(db.String, unique=True, nullable=False)
-    students = db.relationship('User', secondary='class_session_students', back_populates='enrolled_sessions')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    moods = db.relationship('Mood', back_populates='class_session')
-
+    moods = db.relationship('Mood', backref='session_moods', lazy=True)
+    students = db.relationship('User', secondary='class_session_students', back_populates='enrolled_sessions')
+    
     def serialize(self):
         return {
             "id": self.id,
@@ -179,7 +159,57 @@ class ClassSession(db.Model):
             "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S")
         }
 
-class ClassSessionStudents(db.Model):
+class Mood(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.String)
+    mood = db.Column(db.String)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    class_session_id = db.Column(db.Integer, db.ForeignKey('class_session.id'))
 
-    class_session_id = db.Column(db.Integer, db.ForeignKey('class_session.id'), primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), primary_key=True)
+    class_session = db.relationship('ClassSession', back_populates='moods')
+
+    explanations = db.relationship('Explanation', back_populates='mood')
+    reasons = db.relationship('Reason', back_populates='mood')
+
+
+    def serialize(self):
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "mood": self.mood,
+            "timestamp": self.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+            "class_session_id": self.class_session_id
+        }
+
+class Explanation(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.String)
+    explanation = db.Column(db.String)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+
+    mood_id = db.Column(db.Integer, db.ForeignKey('mood.id'))
+    mood = db.relationship('Mood', back_populates='explanations')
+
+    def serialize(self):
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "explanation": self.explanation,
+            "timestamp": self.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+            "class_session_id": self.class_session_id
+        }
+
+class Reason(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    label = db.Column(db.String)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    mood_id = db.Column(db.Integer, db.ForeignKey('mood.id'))
+    mood = db.relationship('Mood', back_populates='reasons')
+
+    def serialize(self):
+        return {
+            "id": self.id,
+            "label": self.label,
+            "timestamp": self.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+            "class_session_id": self.class_session_id
+        }
