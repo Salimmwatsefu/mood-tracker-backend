@@ -230,7 +230,7 @@ def register_user():
         if User.query.filter_by(username=username).first():
             raise BadRequest("Username already exists")
         
-        role = "teacher"
+        role = request.json.get("role", "teacher")
 
         # Create new user
         new_user = User(username=username, password=bcrypt.generate_password_hash(password).decode("utf-8"), email=email, name=name, age=age, is_active=True, role=role)
